@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style type="text/css">
+    div#gnav{
+        /*width: 270px;
+        margin: 0 auto;*/
+        height: 30px;
+        text-align: center; /*这个比上面的用法好用 怎么忘了*/
+    }
+    #mine_total{
+        width: 30px;
+        text-align: center;
+    }
+    </style>
+    <title>扫雷</title>
+</head>
+<body>
+    <div id="container">
+    <div id="gnav">
+        剩余:<input type="text" id="mine_total" value="0">
+        <input type="radio" name="level" id="lv-1" checked="checked" onchange="g_init(0)">
+        <!-- 这里用onchange而不用onclick是因为onchange点击文字 label也会响应 而onclick只响应按钮 -->
+        <label for="lv-1">初级</label>
+        <input type="radio" name="level" id="lv-2"  onchange="g_init(1)">
+        <label for="lv-2">中级</label>
+        <input type="radio" name="level" id="lv-3" onchange="g_init(2)">
+        <label for="lv-3">终极</label>
+        <button id="btn" onclick="g_init()">重新开始</button>
+        <!-- 重新开始设置为空 -->
+    </div>
+    </div>
+    <canvas id="mycanv" height="800" width="800"></canvas>
+    <script>
+        // @type{HTMLCanvasElement}获取绘画环境
+    var canv=document.getElementById("mycanv");
+    var ctx=canv.getContext('2d');
+    var gnav=document.getElementById('gnav');
+    var mine_total=document.getElementById('mine_total');
+
+    //初始化游戏信息变量
+    var levels=[[9,9,10],[16,16,25],[16,25,40]];
+    var level=levels[0];//9行9列10雷 levels=[[9,9,10]初级,[16,16,25]中级,[16,25,40]终极]
+    var g_arr=[];//记录每一块的坐标信息 例如1-3 4-9
+    var g_obj={};//此对象以坐标为健 属性有标识，打开状态 标注状态...
+    var g_color={block:'skyblue',open:'#bbb',mine:'#69d',bomb:'#a00',highlight:'#89f'}//颜色设置 块颜色 打开状态颜色 雷块颜色
+    var mine=['💣','🚩','❓','💥']
+    
+    var mine_arr=[];//定义雷的数组 用来判断是否扫雷成功
+    var count=0;
+    var gameover=false;//游戏失败 所有功能失效
+    var timer=0;//计时
+
+    g_init(0);
+
+    function g_init(n){
+       level=n==undefined?level:levels[n]; //level=(n==undefined?level:levels[n]); 如果点击重新开始 n是未定义则显示原来的level
+       //每次改变等级 重置变量
+       g_arr=[];//把之前的清空
+       mine_arr=[];//随机布的雷清空
+       count=0;//计数重置
+       gameover=false;
+       timer=0;
+       //画布改变宽度高度
+       canv.width=level[1]*50;
+       canv.height=level[0]*50;
+       ctx.clearRect(0,0,level[1]*50,level[0]*50)//重置画布 level[1]列*50=长 level[0]*50=宽
+       mine_total.value=level[2];
+       gnav.style.width=level[1]*50+'px';
+       /*var container=document.getElementById("container"); gnav居中
+       container.style.width=level[1]*50+'px';*/
+       //使用for循环遍历 布局
+    for(let i=0;i<level[0];i++){//9行
+        for(let j=0;j<level[1];j++){//9列
+          let xy=j+"-"+i;//这边使用j-i是因为顺序是0-0 1-0 2-0....6-8 7-8 8-8 先按行布局
+          g_arr.push(xy);//添加坐标信息
+          g_obj[xy]={mark:0,open:0};//mark是标识 -1为雷 0-8是数字块 open是打开状态  0未打开 1已打开 -1标注为雷块 2为疑似雷块 全部初始化
+          //初始化布局：绘制游戏块
+          drawBlock(xy,g_color.block);
+        }
+      }
+      setMine();
+    }
+
+    //随机布雷封装函数
+    function setMine(){
+        //sort()方法可以实现升序降序和随机排列 在这此参数是用箭头函数定义一个随机排列函数 slice可以截取数组长度片段
+        mine_arr=g_arr.sort(()=>Math.random()-0.5).slice(0,level[2]);
+        //对每个块进行遍历设置对象的信息
+        mine_arr.forEach(n=>{
+            g_obj[n].mark=-1;
+            let around=getAround(n)
+            around.forEach(xy=>{
+             if(g_obj[xy].mark!=-1) //*很重要 不能覆盖有雷的标识  比如两个雷周边区域重叠(靠一起了) 标识会被覆盖
+              g_obj[xy].mark++   //有雷周围全部+1
+            })
+        })
+    }
+    //showInfo();//确认布局无误后 关闭作弊器
+    //辅助显示 将标识显示在对应的块上用于验证
+    function showInfo(){
+        //对所有的元素进行遍历 如果mark=-1 标识为雷块 否则显示文本
+       g_arr.forEach(n=>{
+           if(g_obj[n].mark==-1){
+               drawBlock(n,g_color.mine);
+               markText(n,mine[0]);
+           }else{
+               markText(n,g_obj[n].mark);
+           }
+       })
+    }
+    //显示文本
+    function markText(xy,txt){
+        let[x,y]=xy.split('-').map(n=>n*50);
+        ctx.save()
+        ctx.font='15px Arial'
+        ctx.fillStyle='darkblue'
+        ctx.textAlign='center'
+        ctx.textBaseline='middle' //设置上下对齐
+        ctx.fillText(txt,x+25,y+25)
+        ctx.restore()
+    }
+    //获取周边
+    function getAround(xy){
+      let[x,y]=xy.split('-').map(n=>n*1); //这里遍历✖️1是因为xy是字符串 分割出来还是字符串 要将其转换为数字 否则后期如果用+运算符进行相应的运算 会进行拼串 这是+运算符的特殊性导致的
+      let around=[];
+      for(let i=-1;i<=1;i++){ //控制该点加其上下3行
+        for(let j=-1;j<=1;j++){//控制该点加其左右3列
+            let id=`${x+j}-${y+i}` //字符模版 
+            //判断得到坐标是否在arr[]数组中 例如0-0会得到-1 - -1 这些都不在arr[]数组中
+            //如果在 则将有效的地址加到其该点around[]数组中 around[]数组中的元素就是该点的周围元素
+            if(g_arr.includes(id)&&id!=xy)around.push(id);//舍去自己 舍己
+        }
+      }
+      /*例如2-2 则其周围
+      1-1 1-2 1-3
+      2-1 2-2 2-3
+      3-1 3-2 3-3
+      */
+    return around;
+    }
+
+
+    //绘制圆角矩形封装函数
+    function drawBlock(xy,c){ //xy是坐标参数 c是颜色
+        let w=50,r=6,m=2;//width,radius,margin
+        let [x,y]=xy.split('-').map(n=>n*w)//用map遍历将每一个块都乘以一个宽度 [x,y]的含义由索引位置变为实际坐标 eg[1,1]->[50,50]   //split将一个字符串分割为子字符串，然后将结果作为字符串数组返回 这里的意思是用x-y中的-将x-y分割为[x,y]
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x,y+r)//因为有圆角 不能移到顶点
+        //arcTo(x1,y1,x2,y2,r) 绘制介于两个切线之间的圆弧,坐标点(x1,y1)为圆弧起点坐标,(x2,y2)为圆弧终点坐标,r为圆弧半径
+        ctx.arcTo(x,y+w-m,x+w-m,y+w-m,r)//加w就是向下移动一个块的距离 -m是留块之间的间隙   绘制第一个圆角
+        ctx.arcTo(x+w-m,y+w-m,x+w-m,y,r)//第二个圆角
+        ctx.arcTo(x+w-m,y,x,y,r)//第三个圆角
+        ctx.arcTo(x,y,x,y+w-m,r)//第四个圆角
+        ctx.fillStyle=c//填充颜色
+        ctx.fill()
+        ctx.restore()//恢复上一个场景
+    }
+    //鼠标事件：简单实现扫雷:click contentmenu 鼠标左键与右键
+    canv.addEventListener('click',openBlock)//添加监听事件
+    canv.addEventListener('contextmenu',markMine)//鼠标右键标注
+    function openBlock(ev){
+        if(gameover){
+            return;
+        }
+        if(timer==0){
+            timer=new Date();
+        }
+        let x=~~(ev.offsetX/50);//~~()快速取整方法 （将内容转化为数字，或者小数取整）
+        let y=~~(ev.offsetY/50);
+        let xy=x+'-'+y;
+        //console.log(x,y);
+        //打开游戏块： 1更新游戏数据 open变为1   2更新页面 
+        if(g_obj[xy].open!=0)return 0;//如果状态是已打开的 直接返回  0未打开 1已打开 -1标注为雷块 2为疑似雷块 
+        g_obj[xy].open=1;
+        drawBlock(xy,g_color.open);
+        markText(xy,g_obj[xy].mark);
+        if(g_obj[xy].mark==0){
+            //递归清零 周围全部显示
+            openZero(xy);
+        }else if(g_obj[xy].mark==-1){
+            //触雷，游戏提前结束
+            drawBlock(xy,g_color.bomb);
+            markText(xy,mine[0]);
+            markText(xy,mine[3]);
+            checkOver();
+        }
+    }
+    function openZero(xy){
+        let around=getAround(xy);
+        around.forEach(n=>{
+            if(g_obj[n].open==0){  //open状态全部由0转为1
+             g_obj[n].open=1;
+             drawBlock(n,g_color.open);
+             markText(n,g_obj[n].mark);
+             //如果碰到的又遇见0 继续打开 即递归
+             if(g_obj[n].mark==0){
+                 openZero(n);
+             }
+            }
+        })
+    }
+
+    function markMine(ev){
+        //标注雷块：对未打开的块，标注雷块-1，标注疑似雷块2，取消标注0
+        if(gameover)return;
+        if(timer==0){
+            timer=new Date();
+        }
+        ev.preventDefault();//阻止浏览器右击默认行为
+        let x=~~(ev.offsetX/50);
+        let y=~~(ev.offsetY/50);
+        let xy=x+'-'+y;
+        //更新数据，更新页面
+        if(g_obj[xy].open==1)return;//如果是已打开的，直接返回 不执行  即已打开的块鼠标右击无效
+        if(g_obj[xy].open==0){  // 判断 未打开的块才可以标注
+        g_obj[xy].open=-1;//标注为炸弹
+        drawBlock(xy,g_color.mine);
+        markText(xy,mine[1]);
+        count++;
+        mine_total.value=level[2]-count;//标注时剩余雷块减去
+        if(count==level[2])checkOver();//如果标注雷数等于当前等级雷数 游戏结束
+       }else if(g_obj[xy].open==-1){ //将标记为炸弹的块变为疑似雷块 也就是第二次右击
+         g_obj[xy].open=2;
+         drawBlock(xy,g_color.mine);
+         markText(xy,mine[2]);
+         count--;
+         mine_total.value=level[2]-count;//取消标注时再重新计算
+       }else if(g_obj[xy].open=2){//对疑似雷块右击，使其恢复未打开状态
+          g_obj[xy].open=0;
+         drawBlock(xy,g_color.block); 
+       }
+      }
+
+      //检查游戏是否结束
+      function checkOver(){
+        gameover=true;
+        let timer2=new Date();
+        let durtime=((timer2-timer)/1000).toFixed(2);//除1000转换为秒 toFixed(2)保留两位小数
+        let win=mine_arr.every(n=>g_obj[n].mark==g_obj[n].open)//当标注雷数小于实际雷数时 标注错误也不会报错 只有标注雷数=实际雷数时 才会判断游戏结果 every返回true or false
+        //只有mark=-1 open=-1 才算标注成功
+            setTimeout(()=>{
+                let next=confirm(win?"Congratulations!\n take your time:"+durtime+'秒 once again?':'good game！once again？'); //这里用法很好  字符串拼接！用法 
+                //点确定直接重新开始 取消则停留当前页面
+                if(next)g_init();
+            },500);
+      }
+      //辅助扫雷: mousedown,mouseup 不用onmouseup,onmousedown原因是其只能绑定一个响应事件
+      //1.按下鼠标，高亮周边，松开鼠标，取消高亮
+      //2.辅助扫雷，对于明确的雷块或安全块进行标注或打开
+      canv.addEventListener('mousedown',highlight);
+      canv.addEventListener('mouseup',highlight);//不整合用unhighlight
+      canv.addEventListener('mouseup',supGame);//用mouseup就可以添加事件监听的多个事件
+      function highlight(ev){
+          if(gameover)return;
+          let x=~~(ev.offsetX/50);
+          let y=~~(ev.offsetY/50);
+          let xy=x+'-'+y;
+          if(g_obj[xy].open!=1)return;//如果非打开状态 直接返回 高亮失效
+    //整合代码
+          let color=ev.type=='mousedown'?g_color.highlight:g_color.block
+          getAround(xy).forEach(n=>{
+              if(g_obj[n].open==0){  //如果被点击元素周围的元素是未打开状态 会高亮显示
+                  drawBlock(n,color)  //不整合是drawBlock(n,g_obj.highlight)
+              }
+          })
+        }
+        /* 整合
+        function unhighlight(ev){
+          let x=~~(ev.offsetX/50);
+          let y=~~(ev.offsetY/50);
+          let xy=x+'-'+y;
+          if(g_obj[xy].open!=1)return;
+          getAround(xy).forEach(n=>{
+              if(g_obj[n].open==0){  
+                  drawBlock(n,g_color.block) //恢复原来样式
+              }
+          })
+        }
+       */
+        function supGame(ev){
+        if(gameover)return;
+        let x=~~(ev.offsetX/50);
+        let y=~~(ev.offsetY/50);
+        let xy=x+'-'+y;
+        if(g_obj[xy].open!=1)return; //如果遇到0未打开  -1标注为雷块 2为疑似雷块 则无效
+        let mark=g_obj[xy].mark;  //mark实际标识  0-8为周围雷数 
+        let marked_mine=0;
+        let unopen=0;
+        let around=getAround(xy);
+        around.forEach(n=>{
+            if(g_obj[n].open==-1)marked_mine++;//已标注为雷的 标记雷++
+            if(g_obj[n].open==0)unopen++;//未打开的 unopen++
+        })
+        around.forEach(n=>{
+            if(g_obj[n].open==0)//首先确保是未打开的
+            {
+                if(mark==marked_mine)//已经全部标注完的
+                {   g_obj[n].open=1;//设置其为打开状态
+                    drawBlock(n,g_color.open);
+                    markText(n,g_obj[n].mark);
+                    if(g_obj[n].mark==0)openZero(n);
+                      //遇到0也要递归清零
+                    if(g_obj[n].mark==-1){ // 如果标注错误 就是把不该是雷的标注成雷 是雷的未标注成雷 进行辅助扫雷 会直接点爆雷 遇到雷则游戏结束
+                        drawBlock(n,g_color.bomb);
+                        markText(n,mine[0]);
+                        markText(n,mine[3]);
+                        checkOver();
+                    }
+                }else if((mark-marked_mine)==unopen){
+                        g_obj[n].open=-1;
+                        drawBlock(n,g_obj.mine);
+                        markText(n,mine[1]);
+                        count++;//标注为雷 count++
+                        mine_total.value=level[2]-count;
+                        if(count==level[2])checkOver();
+                    }
+                }
+            
+        })
+
+    }
+    </script>
+    
+</body>
+</html>
